@@ -217,6 +217,42 @@ def test_progress_bar_green_color():
         root.destroy()
 
 
+# ---- Tests for goal estimates ----
+def test_goal_estimates_calculation():
+    """Test that goal estimates calculate correctly."""
+    import tkinter as tk
+    from datetime import datetime
+
+    # Create a minimal Tkinter root for testing
+    root = tk.Tk()
+    root.withdraw()  # Hide the window
+
+    try:
+        # Create app instance
+        app = WaterTrackerApp()
+
+        # Set goal to 2000 ml
+        app.settings["daily_goal_ml"] = 2000
+
+        # Simulate 500 ml logged (1500 ml remaining)
+        today_str = datetime.now().isoformat()
+        app.log = [{"timestamp": today_str, "amount_ml": 500}]
+        app.update_stats()
+        app._update_goal_estimates()  # Directly call estimates update
+
+        # Check that estimates text contains expected calculations
+        estimates_content = app.estimates_text.get(1.0, tk.END).strip()
+        assert "Need 1500 ml more:" in estimates_content
+        assert "4.2 × Can 355 ml" in estimates_content
+        assert "1.3 × Bottle 1180 ml" in estimates_content
+        assert "6.2 × Cup 240 ml" in estimates_content
+
+        print("✓ Goal estimates calculation test passed")
+
+    finally:
+        root.destroy()
+
+
 if __name__ == "__main__":
     # Quick manual test if not using pytest
     print("Running manual tests...")
@@ -234,6 +270,9 @@ if __name__ == "__main__":
         test_progress_bar_red_color()
         test_progress_bar_yellow_color()
         test_progress_bar_green_color()
+        
+        # Test goal estimates
+        test_goal_estimates_calculation()
         
         print("\nAll manual tests passed!")
     except AssertionError as e:

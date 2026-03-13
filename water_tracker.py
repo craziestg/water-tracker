@@ -147,7 +147,8 @@ class WaterTrackerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Water Tracker")
-        self.geometry("700x520")  # Increased height for progress bar
+        self.geometry("900x640")  # Increased size for full layout
+        self.minsize(850, 620)
 
         # Load data
         self.log = load_log()
@@ -227,6 +228,23 @@ class WaterTrackerApp(tk.Tk):
 
         self.progress_label = ttk.Label(progress_frame, text="0 / 2000 ml (0%)")
         self.progress_label.pack(anchor=tk.W)
+
+        # Goal estimates section
+        estimates_frame = ttk.LabelFrame(stats_frame, text="To reach goal:")
+        estimates_frame.pack(fill=tk.X, pady=(0, 10))
+        # Explicitly set colors to ensure readability across themes
+        self.estimates_text = tk.Text(
+            estimates_frame,
+            height=4,
+            width=25,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            font=(None, 9),
+            bg="#FFFFFF",
+            fg="#000000",
+            insertbackground="#000000",
+        )
+        self.estimates_text.pack(fill=tk.X, padx=4, pady=4)
 
         # Current total
         ttk.Label(stats_frame, text="Today's total:").pack(anchor=tk.W)
@@ -327,6 +345,7 @@ class WaterTrackerApp(tk.Tk):
         self.presets.append({"label": name, "ml": int(ml)})
         save_presets(self.presets)
         self._render_presets()
+        self._update_goal_estimates()
         self.preset_name_var.set("")
         messagebox.showinfo("Preset saved", f"Saved preset '{name}' -> {ml} ml")
 
@@ -397,6 +416,9 @@ class WaterTrackerApp(tk.Tk):
         # Update the custom canvas progress bar
         self._update_progress_bar(progress_percent)
 
+        # Update the goal estimates display
+        self._update_goal_estimates()
+
     def _update_progress_bar(self, percent: float):
         """Update the canvas progress bar width and color."""
         width = self.progress_canvas.winfo_width()
@@ -416,6 +438,47 @@ class WaterTrackerApp(tk.Tk):
             color = "#FF6B6B"  # red
 
         self.progress_canvas.itemconfigure(self._progress_bar_item, fill=color)
+
+    def _update_goal_estimates(self):
+        """Calculate and display how many of each preset are needed to reach the goal."""
+        goal_ml = self.settings.get("daily_goal_ml", 2000)
+        current_ml = 0
+
+        # Calculate current total (same logic as update_stats)
+        today = date.today()
+        for e in self.log:
+            try:
+                ts = datetime.fromisoformat(e["timestamp"]) if isinstance(e["timestamp"], str) else None
+            except Exception:
+                ts = None
+            if ts is None:
+                current_ml += e.get("amount_ml", 0)
+            else:
+                if ts.date() == today:
+                    current_ml += e.get("amount_ml", 0)
+
+        remaining_ml = max(0, goal_ml - current_ml)
+
+        # Enable text widget for editing
+        self.estimates_text.config(state=tk.NORMAL)
+        self.estimates_text.delete(1.0, tk.END)
+
+        if remaining_ml == 0:
+            self.estimates_text.insert(tk.END, "🎉 Goal reached!")
+        else:
+            self.estimates_text.insert(tk.END, f"Need {remaining_ml} ml more:\n\n")
+            for preset in self.presets:
+                preset_ml = preset.get("ml", 0)
+                if preset_ml > 0:
+                    count = remaining_ml / preset_ml
+                    label = preset.get("label", f"{preset_ml} ml")
+                    if count >= 1:
+                        self.estimates_text.insert(tk.END, f"• {count:.1f} × {label}\n")
+                    else:
+                        self.estimates_text.insert(tk.END, f"• {count:.2f} × {label}\n")
+
+        # Disable text widget again
+        self.estimates_text.config(state=tk.DISABLED)
 
     def clear_today(self):
         today = date.today()

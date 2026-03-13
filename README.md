@@ -10,6 +10,7 @@ A simple Python desktop app that helps you track daily water intake. Log water a
 - **Unit Conversion**: Automatically converts between ml, liters, and ounces
 - **Daily Goal Tracking**: Set and track progress toward your daily water goal
 - **Progress Bar**: Visual progress indicator toward your daily goal with color coding (green=complete, yellow=75%+, red=<75%)
+- **Goal Estimates**: Shows how many of each preset (cans, bottles, etc.) you need to reach your daily goal
 - **Daily Stats**: See your total water intake for today
 - **Scheduled Reminders**: Set periodic reminders (configurable minutes)
 - **History**: View all logged entries with timestamps
@@ -68,6 +69,21 @@ See [Desktop Shortcut](#desktop-shortcut) section below.
    - Enter a name in the "Save as preset" field
    - Click **Add Preset**
    - Your new preset appears as a button for quick access
+
+### Goal Estimates
+
+The "To reach goal:" section shows exactly how many of each preset you need to consume to reach your daily goal. For example:
+
+```
+Need 1500 ml more:
+
+• 4.2 × Can 355 ml
+• 1.3 × Bottle 1180 ml
+• 6.2 × Cup 240 ml
+• 4.2 × Coffee 12 oz
+```
+
+This helps you plan how many drinks you need based on your available containers.
 
 ### Reminders
 
