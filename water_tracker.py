@@ -1,0 +1,480 @@
+﻿#!/usr/bin/env python3
+"""
+Simple Water Tracker desktop app using Tkinter.
+
+Features:
+- Log water amounts in ml, L, or oz
+- Preset buttons for common can/bottle sizes (bottle changed to 1L)
+- Add user-defined presets (saved to disk as presets.json)
+- Unit conversion helpers (documented)
+- Persists log to `water_log.json`
+- Shows basic stats for today's total
+- Simple scheduled reminders (in-app popups)
+"""
+
+import json
+import os
+import threading
+import time
+from datetime import datetime, date
+from functools import partial
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+# Filenames for persistence
+LOG_FILENAME = os.path.join(os.path.dirname(__file__), "water_log.json")
+PRESETS_FILENAME = os.path.join(os.path.dirname(__file__), "presets.json")
+SETTINGS_FILENAME = os.path.join(os.path.dirname(__file__), "settings.json")
+
+# Conversion constant
+ML_PER_OUNCE = 29.5735295625
+
+
+# -----------------------------
+# Persistence helpers
+# -----------------------------
+def load_json_file(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+    except Exception:
+        try:
+            os.rename(path, path + ".bak")
+        except Exception:
+            pass
+        return default
+
+
+def save_json_file(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def load_log():
+    return load_json_file(LOG_FILENAME, [])
+
+
+def save_log(log):
+    save_json_file(LOG_FILENAME, log)
+
+
+def load_presets():
+    """Load custom presets; fall back to built-in defaults if none exist."""
+    saved = load_json_file(PRESETS_FILENAME, None)
+    if saved is not None:
+        return saved
+    # Default built-in presets (bottle changed to 1000 ml = 1 L)
+    return [
+        {"label": "Can 355 ml", "ml": 355},
+        {"label": "Bottle 1000 ml", "ml": 1000},
+        {"label": "Cup 240 ml", "ml": 240},
+    ]
+
+
+def save_presets(presets):
+    save_json_file(PRESETS_FILENAME, presets)
+
+
+def load_settings():
+    """Load user settings; fall back to defaults if none exist."""
+    saved = load_json_file(SETTINGS_FILENAME, None)
+    if saved is not None:
+        return saved
+    # Default settings
+    return {
+        "daily_goal_ml": 2000,  # 2 liters default
+    }
+
+
+def save_settings(settings):
+    save_json_file(SETTINGS_FILENAME, settings)
+
+
+# -----------------------------
+# Unit conversion helpers
+# -----------------------------
+def to_ml(amount, unit):
+    if amount is None:
+        raise ValueError("amount is required")
+    unit = unit.strip().lower()
+    if unit in ("ml", "milliliter", "milliliters"):
+        return int(round(float(amount)))
+    if unit in ("l", "liter", "liters"):
+        return int(round(float(amount) * 1000.0))
+    if unit in ("oz", "ounce", "ounces"):
+        return int(round(float(amount) * ML_PER_OUNCE))
+    raise ValueError(f"unsupported unit: {unit}")
+
+
+def ml_to_oz(ml):
+    return float(ml) / ML_PER_OUNCE
+
+
+# -----------------------------
+# Reminder thread
+# -----------------------------
+class ReminderThread:
+    def __init__(self, interval_minutes, callback, app):
+        self.interval = max(1, int(interval_minutes))
+        self.callback = callback
+        self.app = app
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._stop.clear()
+        if not self._thread.is_alive():
+            self._thread = threading.Thread(target=self._run, daemon=True)
+            self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        while not self._stop.wait(self.interval * 60):
+            try:
+                self.app.after(0, self.callback)
+            except Exception:
+                pass
+
+
+# -----------------------------
+# GUI app
+# -----------------------------
+class WaterTrackerApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Water Tracker")
+        self.geometry("700x520")  # Increased height for progress bar
+
+        # Load data
+        self.log = load_log()
+        self.presets = load_presets()
+        self.settings = load_settings()
+
+        # Build UI
+        self._build_ui()
+
+        # Initial update
+        self.update_stats()
+
+        self.reminder_thread = None
+
+    def _build_ui(self):
+        # Top: manual entry
+        top = ttk.Frame(self, padding=(10, 10))
+        top.pack(fill=tk.X)
+
+        ttk.Label(top, text="Amount:").grid(row=0, column=0, sticky=tk.W)
+        self.amount_var = tk.StringVar()
+        ttk.Entry(top, textvariable=self.amount_var, width=12).grid(row=0, column=1)
+
+        ttk.Label(top, text="Unit:").grid(row=0, column=2, sticky=tk.W, padx=(10, 0))
+        self.unit_var = tk.StringVar(value="ml")
+        unit_combo = ttk.Combobox(top, textvariable=self.unit_var, values=["ml", "L", "oz"], width=6)
+        unit_combo.grid(row=0, column=3)
+
+        add_btn = ttk.Button(top, text="Add", command=self.on_add)
+        add_btn.grid(row=0, column=4, padx=(10, 0))
+
+        # Allow saving current manual amount as a custom preset
+        ttk.Label(top, text="Save as preset:").grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
+        self.preset_name_var = tk.StringVar()
+        ttk.Entry(top, textvariable=self.preset_name_var, width=20).grid(row=1, column=1, columnspan=2, sticky=tk.W)
+        save_preset_btn = ttk.Button(top, text="Add Preset", command=self.save_current_as_preset)
+        save_preset_btn.grid(row=1, column=3, padx=(6, 0), sticky=tk.W)
+
+        # Preset buttons area
+        preset_frame = ttk.LabelFrame(self, text="Presets (click to add)")
+        preset_frame.pack(fill=tk.X, padx=10, pady=(8, 4))
+        self.preset_buttons_frame = ttk.Frame(preset_frame)
+        self.preset_buttons_frame.pack(fill=tk.X, padx=6, pady=6)
+        self._render_presets()
+
+        # Configure progress bar styles
+        self._configure_progress_styles()
+
+        # Middle: stats and history
+        mid = ttk.Frame(self, padding=(10, 10))
+        mid.pack(fill=tk.BOTH, expand=True)
+
+        stats_frame = ttk.Frame(mid)
+        stats_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+
+        # Daily goal setting
+        goal_frame = ttk.Frame(stats_frame)
+        goal_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(goal_frame, text="Daily goal:").pack(anchor=tk.W)
+        goal_input_frame = ttk.Frame(goal_frame)
+        goal_input_frame.pack(fill=tk.X, pady=(2, 0))
+        self.goal_var = tk.StringVar(value=str(self.settings.get("daily_goal_ml", 2000)))
+        ttk.Entry(goal_input_frame, textvariable=self.goal_var, width=8).pack(side=tk.LEFT)
+        ttk.Label(goal_input_frame, text="ml").pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Button(goal_input_frame, text="Set", command=self.set_daily_goal).pack(side=tk.LEFT, padx=(6, 0))
+
+        # Progress bar (custom canvas-based for consistent coloring)
+        progress_frame = ttk.Frame(stats_frame)
+        progress_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(progress_frame, text="Progress:").pack(anchor=tk.W)
+        self.progress_var = tk.DoubleVar()
+
+        # Create a canvas-based progress bar for reliable color control across platforms
+        self.progress_canvas = tk.Canvas(progress_frame, height=20, bd=0, highlightthickness=1, highlightbackground="#999")
+        self.progress_canvas.pack(fill=tk.X, pady=(2, 4))
+        self._progress_bar_item = self.progress_canvas.create_rectangle(0, 0, 0, 20, fill="#FF6B6B", width=0)
+
+        self.progress_label = ttk.Label(progress_frame, text="0 / 2000 ml (0%)")
+        self.progress_label.pack(anchor=tk.W)
+
+        # Current total
+        ttk.Label(stats_frame, text="Today's total:").pack(anchor=tk.W)
+        self.total_var = tk.StringVar(value="0 ml")
+        ttk.Label(stats_frame, textvariable=self.total_var, font=(None, 14, "bold")).pack(anchor=tk.W, pady=(4, 10))
+
+        # Reminder controls
+        ttk.Label(stats_frame, text="Reminder (minutes):").pack(anchor=tk.W)
+        self.reminder_interval_var = tk.StringVar(value="60")
+        ttk.Entry(stats_frame, textvariable=self.reminder_interval_var, width=6).pack(anchor=tk.W)
+        self.reminder_start_btn = ttk.Button(stats_frame, text="Start reminders", command=self.start_reminders)
+        self.reminder_start_btn.pack(anchor=tk.W, pady=(6, 2))
+        self.reminder_stop_btn = ttk.Button(stats_frame, text="Stop reminders", command=self.stop_reminders, state=tk.DISABLED)
+        self.reminder_stop_btn.pack(anchor=tk.W)
+
+        # History list
+        history_frame = ttk.Frame(mid)
+        history_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        ttk.Label(history_frame, text="History (most recent first):").pack(anchor=tk.W)
+        self.history_list = tk.Listbox(history_frame, height=16)
+        self.history_list.pack(fill=tk.BOTH, expand=True)
+
+        # Bottom controls
+        bottom = ttk.Frame(self, padding=(10, 6))
+        bottom.pack(fill=tk.X)
+        ttk.Button(bottom, text="Clear Today", command=self.clear_today).pack(side=tk.LEFT)
+        ttk.Button(bottom, text="Export JSON", command=self.export_json).pack(side=tk.LEFT, padx=(6, 0))
+
+        self.refresh_history_list()
+
+    def set_daily_goal(self):
+        """Update the daily water goal."""
+        try:
+            goal_ml = int(self.goal_var.get())
+            if goal_ml <= 0:
+                raise ValueError("Goal must be positive")
+            self.settings["daily_goal_ml"] = goal_ml
+            save_settings(self.settings)
+            self.update_stats()
+            messagebox.showinfo("Goal Updated", f"Daily goal set to {goal_ml} ml")
+        except ValueError as e:
+            messagebox.showerror("Invalid Goal", f"Please enter a valid number: {e}")
+
+    # Render preset buttons from self.presets
+    def _render_presets(self):
+        # Clear existing
+        for child in self.preset_buttons_frame.winfo_children():
+            child.destroy()
+        # Create a button for each preset
+        for i, p in enumerate(self.presets):
+            label = p.get("label", f"{p.get('ml')} ml")
+            ml = p.get("ml", 0)
+            btn = ttk.Button(self.preset_buttons_frame, text=label, command=partial(self.add_preset_ml, ml))
+            btn.grid(row=0, column=i, padx=4, pady=2)
+
+    def _configure_progress_styles(self):
+        """Configure progress bar styles for different completion levels."""
+        style = ttk.Style()
+
+        # Default progress bar (red/incomplete)
+        style.configure('Horizontal.TProgressbar',
+                       background='#FF6B6B',  # Light red
+                       troughcolor='#E0E0E0',  # Light gray trough
+                       borderwidth=1,
+                       lightcolor='#FF6B6B',
+                       darkcolor='#FF6B6B')
+
+        # Yellow progress bar (75%+ completion)
+        style.configure('Yellow.Horizontal.TProgressbar',
+                       background='#FFD93D',  # Yellow
+                       troughcolor='#E0E0E0',
+                       borderwidth=1,
+                       lightcolor='#FFD93D',
+                       darkcolor='#FFD93D')
+
+        # Green progress bar (100% completion)
+        style.configure('Green.Horizontal.TProgressbar',
+                       background='#6BCF7F',  # Green
+                       troughcolor='#E0E0E0',
+                       borderwidth=1,
+                       lightcolor='#6BCF7F',
+                       darkcolor='#6BCF7F')
+
+    # Save manual input as a preset (user-defined)
+    def save_current_as_preset(self):
+        name = self.preset_name_var.get().strip()
+        amt = self.amount_var.get().strip()
+        unit = self.unit_var.get().strip()
+        if not name or not amt:
+            messagebox.showinfo("Preset required", "Enter a name and amount to save a preset.")
+            return
+        try:
+            ml = to_ml(amt, unit)
+        except Exception as e:
+            messagebox.showerror("Invalid input", str(e))
+            return
+        # Append new preset and persist
+        self.presets.append({"label": name, "ml": int(ml)})
+        save_presets(self.presets)
+        self._render_presets()
+        self.preset_name_var.set("")
+        messagebox.showinfo("Preset saved", f"Saved preset '{name}' -> {ml} ml")
+
+    # Add preset ml to the log
+    def add_preset_ml(self, ml):
+        entry = {"timestamp": datetime.utcnow().isoformat(), "amount_ml": int(ml)}
+        self.log.insert(0, entry)
+        save_log(self.log)
+        self.refresh_history_list()
+        self.update_stats()
+
+    # Add manual entry
+    def on_add(self):
+        amt = self.amount_var.get().strip()
+        unit = self.unit_var.get().strip()
+        if not amt:
+            messagebox.showinfo("Input required", "Please enter an amount to add.")
+            return
+        try:
+            ml = to_ml(amt, unit)
+        except Exception as e:
+            messagebox.showerror("Invalid input", str(e))
+            return
+        entry = {"timestamp": datetime.utcnow().isoformat(), "amount_ml": int(ml)}
+        self.log.insert(0, entry)
+        save_log(self.log)
+        self.refresh_history_list()
+        self.update_stats()
+        self.amount_var.set("")
+
+    # UI refresh helpers
+    def refresh_history_list(self):
+        self.history_list.delete(0, tk.END)
+        for entry in self.log[:200]:
+            ts = entry.get("timestamp")
+            try:
+                d = datetime.fromisoformat(ts)
+                ts_str = d.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                ts_str = ts
+            ml = entry.get("amount_ml", 0)
+            oz = ml_to_oz(ml)
+            self.history_list.insert(tk.END, f"{ts_str} — {ml} ml ({oz:.1f} oz)")
+
+    def update_stats(self):
+        today = date.today()
+        total_ml = 0
+        for e in self.log:
+            try:
+                ts = datetime.fromisoformat(e["timestamp"]) if isinstance(e["timestamp"], str) else None
+            except Exception:
+                ts = None
+            if ts is None:
+                total_ml += e.get("amount_ml", 0)
+            else:
+                if ts.date() == today:
+                    total_ml += e.get("amount_ml", 0)
+
+        # Update total display
+        self.total_var.set(f"{total_ml} ml")
+
+        # Update progress bar
+        goal_ml = self.settings.get("daily_goal_ml", 2000)
+        progress_percent = min(100.0, (total_ml / goal_ml) * 100.0) if goal_ml > 0 else 0
+        self.progress_var.set(progress_percent)
+        self.progress_label.config(text=f"{total_ml} / {goal_ml} ml ({progress_percent:.1f}%)")
+
+        # Update the custom canvas progress bar
+        self._update_progress_bar(progress_percent)
+
+    def _update_progress_bar(self, percent: float):
+        """Update the canvas progress bar width and color."""
+        width = self.progress_canvas.winfo_width()
+        # If the canvas has not been drawn yet, schedule an update after idle
+        if width <= 1:
+            self.after(10, lambda: self._update_progress_bar(percent))
+            return
+
+        fill_width = int(width * (percent / 100.0))
+        self.progress_canvas.coords(self._progress_bar_item, 0, 0, fill_width, 20)
+
+        if percent >= 100:
+            color = "#6BCF7F"  # green
+        elif percent >= 75:
+            color = "#FFD93D"  # yellow
+        else:
+            color = "#FF6B6B"  # red
+
+        self.progress_canvas.itemconfigure(self._progress_bar_item, fill=color)
+
+    def clear_today(self):
+        today = date.today()
+        new_log = []
+        for e in self.log:
+            try:
+                ts = datetime.fromisoformat(e["timestamp"]) if isinstance(e["timestamp"], str) else None
+            except Exception:
+                ts = None
+            if ts is None or ts.date() != today:
+                new_log.append(e)
+        self.log = new_log
+        save_log(self.log)
+        self.refresh_history_list()
+        self.update_stats()
+
+    def export_json(self):
+        out_name = os.path.join(os.path.dirname(__file__), f"water_export_{int(time.time())}.json")
+        with open(out_name, "w", encoding="utf-8") as f:
+            json.dump(self.log, f, indent=2, ensure_ascii=False)
+        messagebox.showinfo("Exported", f"Saved to {out_name}")
+
+    def start_reminders(self):
+        if self.reminder_thread is not None:
+            messagebox.showinfo("Reminders", "Reminders already running.")
+            return
+        try:
+            mins = int(self.reminder_interval_var.get())
+        except Exception:
+            messagebox.showerror("Invalid interval", "Enter an numeric minutes value.")
+            return
+        self.reminder_thread = ReminderThread(mins, self._show_reminder, self)
+        self.reminder_thread.start()
+        self.reminder_start_btn.config(state=tk.DISABLED)
+        self.reminder_stop_btn.config(state=tk.NORMAL)
+        messagebox.showinfo("Reminders", f"Reminders started every {mins} minutes.")
+
+    def stop_reminders(self):
+        if self.reminder_thread is None:
+            return
+        self.reminder_thread.stop()
+        self.reminder_thread = None
+        self.reminder_start_btn.config(state=tk.NORMAL)
+        self.reminder_stop_btn.config(state=tk.DISABLED)
+
+    def _show_reminder(self):
+        try:
+            messagebox.showinfo("Hydration Reminder", "Time to drink water! Log what you drank.")
+        except Exception:
+            try:
+                self.bell()
+            except Exception:
+                pass
+
+
+def main():
+    app = WaterTrackerApp()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()

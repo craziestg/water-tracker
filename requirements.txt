@@ -1,0 +1,7 @@
+# Water Tracker - Requirements
+
+# Core: No external dependencies required!
+# Tkinter is included in Python's standard library (3.6+)
+
+# Optional for testing:
+pytest>=7.0
