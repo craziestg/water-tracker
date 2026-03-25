@@ -21,7 +21,7 @@ A simple Python desktop app that helps you track daily water intake. Log water a
 
 - `water_tracker.py` : Main application (Tkinter GUI)
 - `test_water_tracker.py` : Unit tests for conversion functions and progress bar colors
-- `water_log.json` : Created at runtime; stores all logged entries
+- `water_log.json` : Created at runtime; stores all logged entries (timestamps in system local time)
 - `presets.json` : Created at runtime; stores custom presets
 - `settings.json` : Created at runtime; stores user settings (daily goal)
 - `requirements.txt` : Dependencies (none; uses Python standard library)

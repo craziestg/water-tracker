@@ -14,5 +14,13 @@
   {
     "label": "Coffee 12 oz",
     "ml": 355
+  },
+  {
+    "label": "Carton 236 ml",
+    "ml": 236
+  },
+  {
+    "label": "Cocowater 330 ml",
+    "ml": 330
   }
 ]

@@ -10,6 +10,7 @@ Features:
 - Persists log to `water_log.json`
 - Shows basic stats for today's total
 - Simple scheduled reminders (in-app popups)
+- Timestamps use system local time (not UTC)
 """
 
 import json
@@ -231,7 +232,12 @@ class WaterTrackerApp(tk.Tk):
 
         # Goal estimates section
         estimates_frame = ttk.LabelFrame(stats_frame, text="To reach goal:")
-        estimates_frame.pack(fill=tk.X, pady=(0, 10))
+        estimates_frame.pack(fill=tk.BOTH, pady=(0, 10), expand=True)
+
+        # Add scrollbar for dynamic content growth
+        estimates_scrollbar = ttk.Scrollbar(estimates_frame)
+        estimates_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
         # Explicitly set colors to ensure readability across themes
         self.estimates_text = tk.Text(
             estimates_frame,
@@ -243,8 +249,10 @@ class WaterTrackerApp(tk.Tk):
             bg="#FFFFFF",
             fg="#000000",
             insertbackground="#000000",
+            yscrollcommand=estimates_scrollbar.set,
         )
-        self.estimates_text.pack(fill=tk.X, padx=4, pady=4)
+        self.estimates_text.pack(fill=tk.BOTH, padx=4, pady=4, expand=True)
+        estimates_scrollbar.config(command=self.estimates_text.yview)
 
         # Current total
         ttk.Label(stats_frame, text="Today's total:").pack(anchor=tk.W)
@@ -351,7 +359,7 @@ class WaterTrackerApp(tk.Tk):
 
     # Add preset ml to the log
     def add_preset_ml(self, ml):
-        entry = {"timestamp": datetime.utcnow().isoformat(), "amount_ml": int(ml)}
+        entry = {"timestamp": datetime.now().isoformat(), "amount_ml": int(ml)}
         self.log.insert(0, entry)
         save_log(self.log)
         self.refresh_history_list()
@@ -369,7 +377,7 @@ class WaterTrackerApp(tk.Tk):
         except Exception as e:
             messagebox.showerror("Invalid input", str(e))
             return
-        entry = {"timestamp": datetime.utcnow().isoformat(), "amount_ml": int(ml)}
+        entry = {"timestamp": datetime.now().isoformat(), "amount_ml": int(ml)}
         self.log.insert(0, entry)
         save_log(self.log)
         self.refresh_history_list()
@@ -476,6 +484,10 @@ class WaterTrackerApp(tk.Tk):
                         self.estimates_text.insert(tk.END, f"• {count:.1f} × {label}\n")
                     else:
                         self.estimates_text.insert(tk.END, f"• {count:.2f} × {label}\n")
+
+        # Adjust height so all lines are visible (up to a maximum for practical UI)
+        lines = int(self.estimates_text.index('end-1c').split('.')[0])
+        self.estimates_text.config(height=min(max(5, lines), 16))
 
         # Disable text widget again
         self.estimates_text.config(state=tk.DISABLED)
