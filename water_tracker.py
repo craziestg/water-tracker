@@ -276,31 +276,24 @@ class WaterTrackerApp(tk.Tk):
         self.reminder_stop_btn = ttk.Button(stats_frame, text="Stop reminders", command=self.stop_reminders, state=tk.DISABLED)
         self.reminder_stop_btn.pack(anchor=tk.W)
 
-        # History list
-        history_frame = ttk.Frame(mid)
-        history_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        ttk.Label(history_frame, text="History (most recent first):").pack(anchor=tk.W)
-        self.history_list = tk.Listbox(history_frame, height=16)
-        self.history_list.pack(fill=tk.BOTH, expand=True)
-
-        # Graph section (if matplotlib is available)
+        # Graph section on the right (if matplotlib is available)
         if MATPLOTLIB_AVAILABLE:
-            graph_frame = ttk.LabelFrame(self, text="Daily Intake Trend (Past 7 Days)")
-            graph_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 6))
+            graph_frame = ttk.LabelFrame(mid, text="Daily Intake Trend (Past 7 Days)")
+            graph_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
             self.graph_canvas_widget = ttk.Frame(graph_frame)
             self.graph_canvas_widget.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
             self._update_graph()
         else:
             # Placeholder if matplotlib is not available
-            ttk.Label(self, text="Install matplotlib to see daily intake graphs: pip install matplotlib").pack(pady=10)
+            placeholder_frame = ttk.Frame(mid)
+            placeholder_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(10, 0))
+            ttk.Label(placeholder_frame, text="Install matplotlib to see daily intake graphs:\npip install matplotlib").pack(padx=10, pady=10)
 
         # Bottom controls
         bottom = ttk.Frame(self, padding=(10, 6))
         bottom.pack(fill=tk.X)
         ttk.Button(bottom, text="Clear Today", command=self.clear_today).pack(side=tk.LEFT)
         ttk.Button(bottom, text="Export JSON", command=self.export_json).pack(side=tk.LEFT, padx=(6, 0))
-
-        self.refresh_history_list()
 
     def set_daily_goal(self):
         """Update the daily water goal."""
@@ -381,7 +374,6 @@ class WaterTrackerApp(tk.Tk):
         entry = {"timestamp": datetime.now().isoformat(), "amount_ml": int(ml)}
         self.log.insert(0, entry)
         save_log(self.log)
-        self.refresh_history_list()
         self.update_stats()
 
     # Add manual entry
@@ -399,7 +391,6 @@ class WaterTrackerApp(tk.Tk):
         entry = {"timestamp": datetime.now().isoformat(), "amount_ml": int(ml)}
         self.log.insert(0, entry)
         save_log(self.log)
-        self.refresh_history_list()
         self.update_stats()
         self.amount_var.set("")
 
@@ -590,7 +581,6 @@ class WaterTrackerApp(tk.Tk):
                 new_log.append(e)
         self.log = new_log
         save_log(self.log)
-        self.refresh_history_list()
         self.update_stats()
 
     def export_json(self):
