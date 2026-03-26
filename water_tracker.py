@@ -156,8 +156,8 @@ class WaterTrackerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Water Tracker")
-        self.geometry("900x640")  # Increased size for full layout
-        self.minsize(850, 620)
+        self.geometry("1100x750")  # Increased size for full layout with graph
+        self.minsize(1000, 700)
 
         # Load data
         self.log = load_log()
@@ -560,7 +560,6 @@ class WaterTrackerApp(tk.Tk):
         
         ax.set_ylabel("Water (ml)")
         ax.set_xlabel("Date")
-        ax.set_title("Daily Water Intake")
         ax.legend()
         ax.grid(axis="y", alpha=0.3)
         
