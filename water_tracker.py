@@ -17,10 +17,18 @@ import json
 import os
 import threading
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from functools import partial
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+try:
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.figure import Figure
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
 
 # Filenames for persistence
 LOG_FILENAME = os.path.join(os.path.dirname(__file__), "water_log.json")
@@ -275,6 +283,17 @@ class WaterTrackerApp(tk.Tk):
         self.history_list = tk.Listbox(history_frame, height=16)
         self.history_list.pack(fill=tk.BOTH, expand=True)
 
+        # Graph section (if matplotlib is available)
+        if MATPLOTLIB_AVAILABLE:
+            graph_frame = ttk.LabelFrame(self, text="Daily Intake Trend (Past 7 Days)")
+            graph_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 6))
+            self.graph_canvas_widget = ttk.Frame(graph_frame)
+            self.graph_canvas_widget.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+            self._update_graph()
+        else:
+            # Placeholder if matplotlib is not available
+            ttk.Label(self, text="Install matplotlib to see daily intake graphs: pip install matplotlib").pack(pady=10)
+
         # Bottom controls
         bottom = ttk.Frame(self, padding=(10, 6))
         bottom.pack(fill=tk.X)
@@ -427,6 +446,10 @@ class WaterTrackerApp(tk.Tk):
         # Update the goal estimates display
         self._update_goal_estimates()
 
+        # Update the graph
+        if MATPLOTLIB_AVAILABLE:
+            self._update_graph()
+
     def _update_progress_bar(self, percent: float):
         """Update the canvas progress bar width and color."""
         width = self.progress_canvas.winfo_width()
@@ -491,6 +514,69 @@ class WaterTrackerApp(tk.Tk):
 
         # Disable text widget again
         self.estimates_text.config(state=tk.DISABLED)
+
+    def _get_daily_totals(self, days=7):
+        """Calculate daily water intake totals for the past N days."""
+        daily_totals = {}
+        today = date.today()
+        
+        for i in range(days):
+            current_date = today - timedelta(days=i)
+            daily_totals[current_date] = 0
+        
+        # Sum up amounts by date
+        for entry in self.log:
+            try:
+                ts = datetime.fromisoformat(entry["timestamp"]) if isinstance(entry["timestamp"], str) else None
+                if ts:
+                    entry_date = ts.date()
+                    if entry_date in daily_totals:
+                        daily_totals[entry_date] += entry.get("amount_ml", 0)
+            except Exception:
+                pass
+        
+        # Sort by date ascending
+        sorted_dates = sorted(daily_totals.keys())
+        return sorted_dates, [daily_totals[d] for d in sorted_dates]
+
+    def _update_graph(self):
+        """Update the daily intake trend graph."""
+        if not MATPLOTLIB_AVAILABLE:
+            return
+        
+        # Clear previous graph
+        for widget in self.graph_canvas_widget.winfo_children():
+            widget.destroy()
+        
+        # Get daily totals
+        dates, totals = self._get_daily_totals(days=7)
+        
+        if not dates:
+            ttk.Label(self.graph_canvas_widget, text="No data to display").pack()
+            return
+        
+        # Create matplotlib figure
+        fig = Figure(figsize=(8, 3), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        # Plot daily totals
+        date_labels = [d.strftime("%m-%d") for d in dates]
+        ax.bar(date_labels, totals, color="#4CAF50", alpha=0.7, edgecolor="#2E7D32")
+        
+        # Add goal line
+        goal_ml = self.settings.get("daily_goal_ml", 2000)
+        ax.axhline(y=goal_ml, color="red", linestyle="--", label=f"Goal: {goal_ml} ml", linewidth=2)
+        
+        ax.set_ylabel("Water (ml)")
+        ax.set_xlabel("Date")
+        ax.set_title("Daily Water Intake")
+        ax.legend()
+        ax.grid(axis="y", alpha=0.3)
+        
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=self.graph_canvas_widget)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def clear_today(self):
         today = date.today()

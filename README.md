@@ -11,6 +11,7 @@ A simple Python desktop app that helps you track daily water intake. Log water a
 - **Daily Goal Tracking**: Set and track progress toward your daily water goal
 - **Progress Bar**: Visual progress indicator toward your daily goal with color coding (green=complete, yellow=75%+, red=<75%)
 - **Goal Estimates**: Shows how many of each preset (cans, bottles, etc.) you need to reach your daily goal
+- **Daily Intake Graph**: Visual chart showing water intake trends over the past 7 days with daily totals and goal line
 - **Daily Stats**: See your total water intake for today
 - **Scheduled Reminders**: Set periodic reminders (configurable minutes)
 - **History**: View all logged entries with timestamps
@@ -24,7 +25,7 @@ A simple Python desktop app that helps you track daily water intake. Log water a
 - `water_log.json` : Created at runtime; stores all logged entries (timestamps in system local time)
 - `presets.json` : Created at runtime; stores custom presets
 - `settings.json` : Created at runtime; stores user settings (daily goal)
-- `requirements.txt` : Dependencies (none; uses Python standard library)
+- `requirements.txt` : Dependencies (matplotlib for graphs, pytest for testing)
 - `run_water_tracker.bat` : Windows batch launcher (see Desktop Shortcut section)
 - `launch_water_tracker.ps1` : PowerShell launcher
 
@@ -32,6 +33,7 @@ A simple Python desktop app that helps you track daily water intake. Log water a
 
 ### Requirements
 - **Python 3.6+** (Tkinter is included in the standard library)
+- **matplotlib** (optional, for daily intake graphs): `pip install matplotlib`
 
 ### Run the App
 

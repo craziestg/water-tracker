@@ -253,6 +253,49 @@ def test_goal_estimates_calculation():
         root.destroy()
 
 
+def test_daily_totals_calculation():
+    """Test that daily totals are calculated correctly from water log."""
+    import tkinter as tk
+    from datetime import datetime, timedelta
+
+    # Create a minimal Tkinter root for testing
+    root = tk.Tk()
+    root.withdraw()  # Hide the window
+
+    try:
+        # Create app instance
+        app = WaterTrackerApp()
+
+        # Add entries for 3 days
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        two_days_ago = today - timedelta(days=2)
+
+        app.log = [
+            {"timestamp": today.isoformat(), "amount_ml": 500},
+            {"timestamp": today.isoformat(), "amount_ml": 600},
+            {"timestamp": yesterday.isoformat(), "amount_ml": 1000},
+            {"timestamp": two_days_ago.isoformat(), "amount_ml": 1200},
+        ]
+
+        # Get daily totals
+        dates, totals = app._get_daily_totals(days=7)
+
+        # Check that we have data
+        assert len(dates) == 7, f"Expected 7 dates, got {len(dates)}"
+
+        # Check that today's total is correct (500 + 600 = 1100)
+        today_date = today.date()
+        if today_date in dates:
+            today_index = dates.index(today_date)
+            assert totals[today_index] == 1100, f"Expected 1100 for today, got {totals[today_index]}"
+
+        print("✓ Daily totals calculation test passed")
+
+    finally:
+        root.destroy()
+
+
 if __name__ == "__main__":
     # Quick manual test if not using pytest
     print("Running manual tests...")
@@ -273,6 +316,9 @@ if __name__ == "__main__":
         
         # Test goal estimates
         test_goal_estimates_calculation()
+        
+        # Test daily totals for graph
+        test_daily_totals_calculation()
         
         print("\nAll manual tests passed!")
     except AssertionError as e:

@@ -3,5 +3,8 @@
 # Core: No external dependencies required!
 # Tkinter is included in Python's standard library (3.6+)
 
+# Optional for graphs visualization:
+matplotlib>=3.5.0
+
 # Optional for testing:
 pytest>=7.0
